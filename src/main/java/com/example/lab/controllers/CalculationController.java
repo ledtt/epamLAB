@@ -1,6 +1,7 @@
 package com.example.lab.controllers;
 import com.example.lab.cache.Cache;
 import com.example.lab.calculations.Calculation;
+import com.example.lab.calculations.CalculationParams;
 import com.example.lab.counter.Counter;
 import com.example.lab.counter.CounterThread;
 import org.apache.logging.log4j.LogManager;
@@ -8,19 +9,16 @@ import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.*;
 import org.w3c.dom.ranges.RangeException;
 import org.springframework.validation.annotation.Validated;
 import javax.validation.Valid;
 import org.springframework.lang.NonNull;
 
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Validated
 @RestController
@@ -42,6 +40,31 @@ public class CalculationController {
         CounterThread counter = new CounterThread();
         counter.start();
         return ResponseEntity.ok("Counter="+Counter.getCounter());
+    }
+    @PostMapping("/bulk")
+    public ResponseEntity<?>  bulkCalculate(@RequestBody List<CalculationParams> paramsList) {
+        List<Double> results = paramsList.stream()
+                .map(p -> {
+                    try {
+                        return calculation.solveEquation(p.getA(), p.getB(), p.getStart(), p.getEnd());
+                    } catch (RangeException e) {
+                        LOGGER.error("Range exception in bulk calculation", e);
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        Map<String, Double> aggregates = new LinkedHashMap<>();
+        aggregates.put("minA", paramsList.stream().mapToDouble(CalculationParams::getA).min().orElse(Double.NaN));
+        aggregates.put("\nmaxA", paramsList.stream().mapToDouble(CalculationParams::getA).max().orElse(Double.NaN));
+        aggregates.put("\navgA", paramsList.stream().mapToDouble(CalculationParams::getA).average().orElse(Double.NaN));
+        aggregates.put("\nminB", paramsList.stream().mapToDouble(CalculationParams::getB).min().orElse(Double.NaN));
+        aggregates.put("\nmaxB", paramsList.stream().mapToDouble(CalculationParams::getB).max().orElse(Double.NaN));
+        aggregates.put("\navgB", paramsList.stream().mapToDouble(CalculationParams::getB).average().orElse(Double.NaN));
+        aggregates.put("\navgStart", paramsList.stream().mapToDouble(CalculationParams::getStart).average().orElse(Double.NaN));
+        aggregates.put("\navgEnd", paramsList.stream().mapToDouble(CalculationParams::getEnd).average().orElse(Double.NaN));
+        aggregates.put("\navgResult", results.stream().mapToDouble(Double::doubleValue).average().orElse(Double.NaN));
+        return new ResponseEntity<>("Results:" + results + "\n" + aggregates, HttpStatus.OK);
     }
     @GetMapping("/calculation")
 

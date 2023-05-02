@@ -24,6 +24,6 @@ public class Calculation {
             x += 0.01;
             y = x + a;
         }
-        return x;
+        return (double) Math.round(x);
     }
 }
