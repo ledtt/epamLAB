@@ -3,7 +3,7 @@ package com.example.lab.counter;
 public class Counter {
     private static int COUNTER = 0;
 
-    public static synchronized void increment(){
+    public static void increment(){
         COUNTER++;
     }
     //если несколько потоков одновременно вызовут метод increment(),

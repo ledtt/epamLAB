@@ -1,9 +1,11 @@
 package com.example.lab.controllers;
+import com.example.lab.async.CalculationParamsAsync;
 import com.example.lab.cache.Cache;
 import com.example.lab.calculations.Calculation;
 import com.example.lab.calculations.CalculationParams;
 import com.example.lab.counter.Counter;
 import com.example.lab.counter.CounterThread;
+import com.example.lab.services.CalculationParamsService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,10 +17,8 @@ import org.springframework.validation.annotation.Validated;
 import javax.validation.Valid;
 import org.springframework.lang.NonNull;
 
-
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Validated
 @RestController
@@ -27,12 +27,17 @@ public class CalculationController {
     private static final Logger LOGGER = LogManager.getLogger(CalculationController.class);
     private final Cache<List<Double>, List<Double>> cache;
 
+    private final CalculationParamsService  calculationParamsService;
+    private final CalculationParamsAsync calculationParamsAsync;
+
     @Autowired
     public CalculationController(Calculation calculation, Cache<List<Double>,
-            List<Double>> cache) {
+            List<Double>> cache, CalculationParamsService  calculationParamsService,
+                                 CalculationParamsAsync calculationParamsAsync ) {
         this.calculation = calculation;
         this.cache = cache;
-
+        this.calculationParamsService = calculationParamsService;
+        this.calculationParamsAsync = calculationParamsAsync;
     }
     @GetMapping("/counter")
     public ResponseEntity<?> count()
@@ -64,6 +69,7 @@ public class CalculationController {
         aggregates.put("\navgStart", paramsList.stream().mapToDouble(CalculationParams::getStart).average().orElse(Double.NaN));
         aggregates.put("\navgEnd", paramsList.stream().mapToDouble(CalculationParams::getEnd).average().orElse(Double.NaN));
         aggregates.put("\navgResult", results.stream().mapToDouble(Double::doubleValue).average().orElse(Double.NaN));
+
         return new ResponseEntity<>("Results:" + results + "\n" + aggregates, HttpStatus.OK);
     }
     @GetMapping("/calculation")
@@ -79,11 +85,18 @@ public class CalculationController {
 
         LOGGER.info("GetMapping by address localhost:8080/calculation?a=...&b=...start=...&end=...");
 
+        CalculationParams calculationParams = new CalculationParams();
         List<Double> params = new ArrayList<>();
         params.add(a);
         params.add(b);
         params.add(start);
         params.add(end);
+
+        calculationParams.setA(a); //для 8
+        calculationParams.setB(b);
+        calculationParams.setStart(start);
+        calculationParams.setEnd(end);
+
         double result;
         if (cache.isContains(params)) {
             LOGGER.info("Retrieved result from cache");
@@ -93,13 +106,28 @@ public class CalculationController {
         else {
             LOGGER.info("Calculate");
             result = calculation.solveEquation(a, b, start, end);
-            //results.add(result);
             cache.push(params, Collections.singletonList(result));
             String message = String.format("%f + x = %f, x = %f - pushed in cache", a, b, result);
             LOGGER.info(message);
         }
+
+        calculationParams.setResult(result);  //для 8
+       calculationParamsService.save(calculationParams); //
+
         return new ResponseEntity<>("Calculated result: " + result + ", counter=" +Counter.getCounter(), HttpStatus.OK);
     }
+    @PostMapping("/async")
+    public Integer async(@RequestBody CalculationParams calculationParams){
+        int id = calculationParamsAsync.createAsync(calculationParams);
+        calculationParamsAsync.computeAsync(id);
+        return id;
+    }
+
+    @GetMapping("/result/{id}")
+    public CalculationParams result(@PathVariable("id")int id){
+        return calculationParamsService.findOne(id);
+    }
+
     @ExceptionHandler(RangeException.class)
     public ResponseEntity<String> handleException(Exception ex) {
         String message = "Error: 500. Wrong Range";
